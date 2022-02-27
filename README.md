@@ -1,4 +1,4 @@
-## Blood Pressure Monitor WiFi Interface - ESP35
+## Blood Pressure Monitor WiFi Interface - ESP32
 
 This is the Arduino code for a ESP32 used to add BLE capability to a Panasonic blood presure monitor.
 

@@ -10,11 +10,9 @@ This is a very rough initial version of the code. Don't expect reliability. Also
 
 ## Changes by the fork
 
-I HAVE NOT MADE ANY MODIFICATIONS YET. STAY TUNED FOR FUTURE CHANGES!
-
-I build a small pulseoximeter w/ an app and thought: I could add a blood pressure monitor to that!
-My connection uses BLE from an ESP32 so some changes will have to be made.
-Luckily I found the same device online for (hopefully) very easy implementation.
+I build a [small pulseoximeter w/ an app](https://github.com/dont-ask-why/Picoximeter) and thought: I could add a blood pressure monitor to that!
+My connection uses BLE from an ESP32 so I can use fancy features like the integrated step down circuit or the deep sleep functionality.
+Luckily I found the same device online for easy implementation.
 
 ## License
 

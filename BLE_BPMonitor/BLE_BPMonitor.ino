@@ -7,11 +7,11 @@
 #include <BLE2902.h>
 
 const int I2C_ERROR = 10;
-const int WAKE_UP_LENGTH = 1000*60*1/6; // 1 minute
 
 boolean busActivity = false;
 boolean resetInterrupt = true;
 boolean newData = false;
+volatile boolean readByClient = false;
 int error = 0;
 RTC_DATA_ATTR int systolic = 0;
 RTC_DATA_ATTR int diastolic = 0;
@@ -19,15 +19,24 @@ RTC_DATA_ATTR int hr = 0;
 int wakeUpTime = 0;
 
 #define SERVICE_UUID        "00002A35-0000-1000-8000-00805f9b34fb" //specific to pulse oximetry services
-#define CHARACTERISTIC_UUID "98117140-14e4-49c2-870c-f702edb5fc3d" //choosen arbitrarily
-BLECharacteristic *aCharacteristic;
+#define VALUE_CHARACTERISTIC_UUID "98117140-14e4-49c2-870c-f702edb5fc3d" //chosen arbitrarily
+#define READ_CHARACTERISTIC_UUID "e5cecf22-6947-42be-8d21-1748293a718b" //chosen arbitrarily
+BLECharacteristic *valueCharacteristic;
+BLECharacteristic *readCharacteristic;
 
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-      String toSend = String(hr) + ";" + String(systolic) + ";" + String(diastolic);
-      aCharacteristic->setValue(toSend.c_str());
-      aCharacteristic->notify();
-    };
+class AdvertismentCallbacks: public BLEServerCallbacks {
+    void onDisconnect(BLEServer* pServer) {
+      Serial.println("Device has disconnected");
+      BLEAdvertising *aAdvertising = pServer->getAdvertising();
+      aAdvertising->addServiceUUID(SERVICE_UUID);
+      aAdvertising->start();
+    } 
+};
+
+class ReadCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic* pCharacteristic) {
+      readByClient = true; // We don't care about data but just that it is available.
+    }
 };
 
 void setup() {
@@ -42,19 +51,28 @@ void setup() {
 
   //BLE server is being initialized
   //create one BLEService and one Characteristic
-  BLEDevice::init("Hacked (TM) BP Monitor");
+  BLEDevice::init("Hacked™ BP Monitor");
   BLEServer *aServer = BLEDevice::createServer();
+  aServer->setCallbacks(new AdvertismentCallbacks());
   
   //uuid for the BLE service is set
   BLEService *aService = aServer->createService(SERVICE_UUID);
   //uuid for the BLE characteristic is set
   //the characteristics properties are defined
-  aCharacteristic = aService->createCharacteristic(
-                     CHARACTERISTIC_UUID,
+  valueCharacteristic = aService->createCharacteristic(
+                     VALUE_CHARACTERISTIC_UUID,
                      BLECharacteristic::PROPERTY_READ   |
                      BLECharacteristic::PROPERTY_NOTIFY  
                    );
-  aCharacteristic->addDescriptor(new BLE2902());
+  valueCharacteristic->addDescriptor(new BLE2902());
+
+  readCharacteristic = aService->createCharacteristic(
+                     READ_CHARACTERISTIC_UUID,
+                     BLECharacteristic::PROPERTY_WRITE   |
+                     BLECharacteristic::PROPERTY_NOTIFY  
+                   );
+  readCharacteristic->addDescriptor(new BLE2902());
+  readCharacteristic->setCallbacks(new ReadCallbacks());
   
   //BLE server is being started
   aService->start();
@@ -64,7 +82,8 @@ void setup() {
 }
 
 void loop() {
-  if(millis() - wakeUpTime > WAKE_UP_LENGTH){
+  // go to sleep with the bp monitor
+  if(digitalRead(13) == LOW){
     Serial.println("Going to sleep.");
     esp_deep_sleep_start();
   }
@@ -89,7 +108,6 @@ void loop() {
     // Delay a bit so the monitor's MCU can finish talking
     delay(500);
   
-    // Get current measurement count
     readCount = getMeasurementCount();
   
     // The user might have turned off the unit causing an interrupt
@@ -108,6 +126,15 @@ void loop() {
         if(newData){
           uploadMeasurements();
           newData = false;
+          Serial.println("New measurment send to connected user.");
+          readByClient = false;
+        } else if(!readByClient){
+          String toSend = String(hr) + ";" + String(systolic) + ";" + String(diastolic);
+          valueCharacteristic->setValue(toSend.c_str());
+          valueCharacteristic->notify();
+          Serial.println("No new measurement but no user reveived it yet so any user is notified about a new measurement.");
+        } else {
+          Serial.println("Measurement already sent. No notifications given.");
         }
       } else {
         Serial.println("Memory was reset.");
@@ -193,7 +220,7 @@ void refreshLastMeasurements(int addr) {
       diastolic = temp_diastolic;
       newData = true;
   } else {
-    Serial.println("Last measured data has already been send. User most likely switches through readings.");
+    Serial.println("Measurement invalid or already received from bp monitor.");
   }
 }
 
@@ -201,6 +228,6 @@ void uploadMeasurements() {
   String toSend = String(hr) + ";" + String(systolic) + ";" + String(diastolic);
   Serial.println(toSend);
     
-  aCharacteristic->setValue(toSend.c_str());
-  aCharacteristic->notify();
+  valueCharacteristic->setValue(toSend.c_str());
+  valueCharacteristic->notify();
 }
